@@ -1,0 +1,755 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Погода у моря</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: шапка с местом → «сейчас» → вкладки → лента дней (архив ← | → прогноз) → таблица по 3 часа */
+:root{
+  --bg:#f3f6f8; --panel:#ffffff; --fg:#14212b; --muted:#5f7280; --line:#dbe3e9;
+  --accent:#0a74b8; --accent-ink:#ffffff; --past:#eaeff3;
+  --sun:#f2ad00; --cloud:#c9d2da; --cloud2:#aab6c0; --moon:#7d8ea0; --rain:#1d8fe0;
+  --tl:86%; --ts:85%;
+  --uv1:#d7ead0; --uv1f:#2f5626; --uv2:#efe6b4; --uv2f:#5c4d06; --uv3:#f2d6b6; --uv3f:#6e3d0c; --uv4:#efc4bb; --uv4f:#7a2416; --uv5:#dccbe9; --uv5f:#52306e;
+  --src-fact:#7d8ea0; --src-hres:#0a74b8; --src-ens:#8a4fd1; --src-best:#14907d;
+  --font:"Golos Text",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f161c; --panel:#17212a; --fg:#e4edf3; --muted:#8fa2b0; --line:#26333e;
+  --accent:#3fa3e6; --accent-ink:#06121b; --past:#131c24;
+  --cloud:#5b6975; --cloud2:#46535e; --moon:#b9c7d3; --rain:#4fb0f5;
+  --tl:30%; --ts:55%;
+  --uv1:#2c3f2a; --uv1f:#b9dcaf; --uv2:#45401f; --uv2f:#e9dc98; --uv3:#4a3524; --uv3f:#f0c79a; --uv4:#4b2a26; --uv4f:#f1b3a6; --uv5:#3c2f4b; --uv5f:#d6c0ea;
+  --src-fact:#8fa2b0; --src-hres:#3fa3e6; --src-ens:#b086ec; --src-best:#3cc2a9;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f161c; --panel:#17212a; --fg:#e4edf3; --muted:#8fa2b0; --line:#26333e;
+  --accent:#3fa3e6; --accent-ink:#06121b; --past:#131c24;
+  --cloud:#5b6975; --cloud2:#46535e; --moon:#b9c7d3; --rain:#4fb0f5;
+  --tl:30%; --ts:55%;
+  --uv1:#2c3f2a; --uv1f:#b9dcaf; --uv2:#45401f; --uv2f:#e9dc98; --uv3:#4a3524; --uv3f:#f0c79a; --uv4:#4b2a26; --uv4f:#f1b3a6; --uv5:#3c2f4b; --uv5f:#d6c0ea;
+  --src-fact:#8fa2b0; --src-hres:#3fa3e6; --src-ens:#b086ec; --src-best:#3cc2a9;
+  color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--fg);font:15px/1.45 var(--font);font-variant-numeric:tabular-nums;
+  padding-left:max(16px,min(1cm,4vw),env(safe-area-inset-left,0px));padding-right:max(16px,min(1cm,4vw),env(safe-area-inset-right,0px));padding-block:8px 1mm;box-sizing:border-box}
+.wrap{display:grid;gap:8px;grid-template-columns:minmax(0,1fr)}
+/* страница занимает ровно окно: шапка и лента по содержимому, таблица дня — всё остальное */
+body>.wrap{height:100%;grid-template-rows:auto auto minmax(0,1fr);gap:4px}
+.wrap>*{min-width:0}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+header{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center;justify-content:space-between}
+.place{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;min-width:0}
+.place h1{margin:0;font-size:22px;font-weight:700;letter-spacing:-.01em;text-wrap:balance}
+.place .sub{color:var(--muted);font-size:13px}
+.hctl{display:flex;gap:8px;flex-wrap:wrap;align-items:center;position:relative}
+.hctl input{width:220px;max-width:60vw;padding:5px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.btn{padding:5px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.btn:hover{border-color:var(--accent)}
+.results{position:absolute;top:36px;left:0;z-index:5;background:var(--panel);border:1px solid var(--line);border-radius:8px;min-width:260px;max-width:90vw;box-shadow:0 8px 24px rgba(0,0,0,.15);overflow:hidden}
+.results button{display:block;width:100%;text-align:left;border:0;background:none;padding:8px 12px}
+.results button:hover{background:var(--past)}
+.results small{color:var(--muted)}
+
+.now{display:flex;flex-wrap:wrap;gap:6px 28px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:clamp(1px,.6vh,10px) 16px}
+.now .big{display:flex;align-items:center;gap:10px}
+.now .big svg{width:clamp(30px,6vh,64px);height:clamp(30px,6vh,64px)}
+.now .big b{font-size:clamp(22px,4.2vh,42px);font-weight:600;letter-spacing:-.02em}
+.now .kv{display:grid;grid-template-columns:auto auto;gap:0 12px;font-size:clamp(12px,1.9vh,16px);line-height:1.3}
+.now .kv span{color:var(--muted)}
+.now .note{color:var(--muted);font-size:13px}
+.now .uvk{margin-left:auto;display:flex}
+.now .uvd{width:clamp(24px,4vh,40px);height:clamp(24px,4vh,40px);font-size:clamp(12px,1.8vh,16px)}
+
+.top{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px;align-items:stretch}
+.side{display:grid;grid-template-columns:minmax(0,1fr);gap:4px;min-width:0;align-content:start}
+.side>*{min-width:0}
+.tabs{display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow-y:auto;height:0;min-height:100%}
+.tabs button{border:0;background:none;color:var(--fg);padding:clamp(0px,.35vh,6px) 14px;white-space:nowrap;font-size:clamp(12px,1.8vh,15px);line-height:1.25;text-align:left;flex:1 0 auto}
+.tabs button:hover{background:var(--past)}
+.tabs button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+
+.strip-head{display:flex;justify-content:space-between;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.06em;padding:0 2px}
+.strip{display:flex;gap:6px;overflow-x:auto;padding:2px;scrollbar-width:none;cursor:grab;user-select:none;touch-action:pan-x pan-y}
+.strip::-webkit-scrollbar{display:none}
+.strip.dragging{cursor:grabbing}
+.strip.dragging .day{pointer-events:none}
+.strip-head{align-items:center}
+.strip-head .btn{padding:clamp(0px,.25vh,4px) 12px;font-size:clamp(11px,1.7vh,14px);text-transform:none;letter-spacing:0;color:var(--fg);background:color-mix(in srgb,var(--accent) 12%,var(--panel));border-color:color-mix(in srgb,var(--accent) 35%,var(--panel))}
+.strip-head .btn:hover{background:color-mix(in srgb,var(--accent) 22%,var(--panel))}
+.day{flex:0 0 132px;border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:clamp(1px,.45vh,7px) 8px;display:grid;grid-template-columns:auto 1fr;grid-template-areas:"date date" "ic t";column-gap:6px;align-items:center;text-align:left;position:relative}
+.day .dhead{grid-area:date;font-size:clamp(11px,1.7vh,14px);white-space:nowrap;padding-right:10px}
+.day .dhead b{font-weight:600}
+.day .dt{grid-area:t;white-space:nowrap;font-size:clamp(12px,2vh,16px);display:flex;align-items:center;gap:4px}
+.day.past{background:var(--past)}
+.day.today{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.day[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.day[aria-pressed="true"] .dmin,.day[aria-pressed="true"] .ddate{color:inherit;opacity:.8}
+.day .dw{font-weight:600;font-size:13px}
+.day .ddate{font-size:clamp(10px,1.6vh,13px);color:var(--muted)}
+.day svg{grid-area:ic;width:clamp(20px,3.6vh,40px);height:clamp(20px,3.6vh,40px)}
+.day .dmax{font-weight:600}
+.day .dmin{color:var(--muted)}
+.day .dot{position:absolute;top:8px;right:7px;width:7px;height:7px;border-radius:50%}
+.day .uvb{line-height:0;margin-left:2px}
+.sep{flex:0 0 2px;background:var(--accent);border-radius:2px;margin:3px 2px}
+
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:3px 14px 6px;display:grid;gap:2px}
+.ph{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:baseline;justify-content:center}
+.ph h2{margin:0;font-size:16px;font-weight:600}
+.src{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.src i{width:8px;height:8px;border-radius:50%;display:inline-block}
+.scroll{overflow-x:auto}
+/* резиновая высота: размеры строк зависят от высоты окна; --k уменьшает их, когда дней несколько */
+#detail{display:grid;grid-auto-rows:minmax(0,1fr);gap:4px;min-height:0;overflow-y:auto}
+#detail .panel{grid-template-rows:auto minmax(0,1fr);min-height:0}
+#detail .scroll{display:grid;grid-template-rows:minmax(0,1fr);min-height:0}
+#detail .grid{min-height:0}
+#detail.multi{grid-auto-rows:minmax(max-content,1fr)}
+#detail.multi .grid{row-gap:0}
+#detail.multi .ic svg{height:24px}
+#detail.multi .scroll{grid-template-rows:auto}
+.grid{display:grid;grid-template-columns:30px repeat(var(--n),minmax(0,1fr));position:relative;row-gap:clamp(0px,.8vh,10px);grid-template-rows:auto minmax(28px,1.2fr) minmax(36px,3fr) minmax(24px,.7fr) minmax(22px,.6fr);align-items:stretch}
+.grid.has-uv{grid-template-rows:auto minmax(28px,1.2fr) minmax(36px,3fr) minmax(24px,.7fr) minmax(22px,.6fr) minmax(24px,.7fr)}
+.vlines{position:absolute;inset:0;display:grid;grid-template-columns:30px repeat(var(--n),minmax(0,1fr));pointer-events:none}
+.vlines i:nth-child(n+3){border-left:1px solid color-mix(in srgb,var(--line) 70%,transparent)}
+.rl{display:flex;align-items:center;justify-content:flex-start;color:var(--muted);cursor:help}
+.rl svg{width:20px;height:20px}
+.hr{text-align:center;color:var(--fg);font-size:15px}
+.hr.gone{color:var(--muted)}
+.ic{display:flex;justify-content:center;align-items:center;min-height:0}
+.ic svg{height:100%;max-height:72px;width:auto;aspect-ratio:1}
+.ic{overflow:hidden}
+.tband{min-height:0;display:flex;align-items:flex-end}
+.tband div{width:100%;background:hsl(var(--h) var(--ts) var(--tl));border-top:2px solid hsl(var(--h) 70% 50%);display:flex;align-items:flex-start;justify-content:center;padding-top:3px;font-size:16px}
+.tband div small.fl{font-size:13px;color:var(--muted)}
+.wind{display:flex;align-items:center;justify-content:center;gap:5px;padding:3px 2px;font-size:16px;white-space:nowrap;cursor:default}
+.wind .wd{font-size:12px;color:var(--muted);display:inline-flex;gap:2px;align-items:center}
+.wind .wd svg{width:11px;height:11px}
+.wind .wg{color:var(--muted)}
+.wind .wg.strong{color:var(--fg);font-weight:600}
+.pr{display:flex;align-items:center;justify-content:center;padding:0;color:var(--muted);font-size:15px}
+.pr.wet{color:var(--rain);background:linear-gradient(to top,color-mix(in srgb,var(--rain) 22%,transparent) 0 6px,transparent 6px)}
+.uv{display:flex;justify-content:center;align-items:center}
+.uvd{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;font-weight:600;font-size:13px;cursor:help}
+.day .uvd{width:clamp(16px,2.4vh,24px);height:clamp(16px,2.4vh,24px);font-size:clamp(9px,1.4vh,12px)}
+.prev{text-align:center;font-size:15px;color:var(--muted)}
+.prev b{font-weight:600}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.legend i{width:12px;height:12px;border-radius:3px;display:inline-block}
+
+table.long{border-collapse:collapse;width:100%;min-width:560px}
+table.long th,table.long td{padding:3px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+table.long th{font-size:12px;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:.04em}
+table.long td:first-child,table.long th:first-child{text-align:left}
+table.long tr.today td{font-weight:600}
+table.long svg{width:28px;height:28px;vertical-align:middle}
+table.long tr{cursor:pointer}
+table.long tr:hover td{background:var(--past)}
+
+footer{color:var(--muted);font-size:12px;display:grid;gap:4px}
+footer .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.err{color:#c0392b}
+.muted{color:var(--muted)}
+/* телефон */
+@media (max-width:640px){
+  body>.wrap{height:auto;min-height:0;grid-template-rows:none;align-content:start}
+  header{gap:6px}
+  .hctl{width:100%}
+  .hctl input{flex:1;width:auto;max-width:none}
+  .top{grid-template-columns:minmax(0,1fr)}
+  .tabs{display:grid;grid-template-columns:repeat(3,1fr);height:auto;min-height:0;overflow:visible}
+  .tabs button{text-align:center;padding:5px 4px;font-size:14px}
+  .now{gap:2px 16px;padding:6px 12px}
+  .now .big svg{width:44px;height:44px}
+  .now .big b{font-size:30px}
+  .now .kv{font-size:13px}
+  #detail{overflow:visible;grid-auto-rows:auto}
+  #detail .scroll{grid-template-rows:auto;overflow:visible}
+  .grid,.grid.has-uv{grid-template-rows:auto 44px 90px 30px 26px;row-gap:4px;align-content:start}
+  .side{align-content:start}
+  .grid.has-uv{grid-template-rows:auto 44px 90px 30px 26px 30px}
+  .ic svg{height:40px}
+  .wind{font-size:15px;gap:3px}
+  table.long{min-width:0}
+  table.long th:nth-child(6),table.long td:nth-child(6),table.long th:nth-child(8),table.long td:nth-child(8){display:none}
+}
+.tip{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);max-width:calc(100% - 32px);background:var(--fg);color:var(--bg);padding:8px 12px;border-radius:8px;font-size:14px;z-index:20;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="place"><h1 id="placeName">Нячанг</h1><div class="sub" id="placeSub">загрузка…</div></div>
+    <div class="hctl">
+      <input id="q" type="search" placeholder="Найти город" autocomplete="off" aria-label="Найти город" title="Введите название города; клик по пустому полю покажет последние места">
+      <button class="btn" id="refresh" title="Загрузить свежий прогноз">Обновить</button>
+      <div class="results" id="results" hidden></div>
+    </div>
+  </header>
+
+  <div class="top">
+  <nav class="tabs" id="tabs">
+    <button data-v="yesterday" title="Погода за вчера из архива">Вчера</button>
+    <button data-v="now" title="Текущая погода и прогноз на сегодня">Сейчас</button>
+    <button data-v="today" title="Прогноз на сегодня по 3 часа">Сегодня</button>
+    <button data-v="tomorrow" title="Прогноз на завтра по 3 часа">Завтра</button>
+    <button data-v="3d" title="Сегодня, завтра и послезавтра">3 дня</button>
+    <button data-v="long" title="Сводка по дням на 16 дней вперёд">2 недели</button>
+  </nav>
+  <div class="side">
+    <section class="now" id="now" aria-live="polite"><span class="muted">Загружаю данные…</span></section>
+  <div>
+    <div class="strip-head"><button class="btn" id="goPast" title="Сдвинуть ленту на день назад">← Архив</button><button class="btn" id="goToday" title="Вернуть ленту к сегодняшнему дню">● К сегодня</button><button class="btn" id="goNext" title="Сдвинуть ленту на день вперёд">Прогноз →</button></div>
+    <div class="strip" id="strip"></div>
+  </div>
+  </div>
+  </div>
+
+  <div id="detail"></div>
+
+</div>
+
+<script>
+"use strict";
+const LS = 'pogoda.v1';
+let COLS, SPAN;
+const MOBILE = matchMedia('(max-width: 640px)');
+function setCols(){ // телефон: 4 колонки по 6 часов, иначе 8 по 3 часа
+  if(MOBILE.matches){ COLS=[4,10,16,22]; SPAN=[3,2]; } else { COLS=[1,4,7,10,13,16,19,22]; SPAN=[1,1]; }
+}
+setCols();
+const SHORT_DAYS = 3;      // сегодня, завтра, послезавтра — детальная модель
+const HV = 'temperature_2m,apparent_temperature,weather_code,cloud_cover,precipitation,wind_speed_10m,wind_direction_10m,wind_gusts_10m';
+const SRC = {
+  fact: {name:'Архив', color:'var(--src-fact)'},
+  hres: {name:'ECMWF IFS HRES', color:'var(--src-hres)'},
+  ens:  {name:'Ансамбль ECMWF, среднее 51 прогноза', color:'var(--src-ens)'},
+  best: {name:'Open-Meteo best match', color:'var(--src-best)'},
+};
+const WD = ['вс','пн','вт','ср','чт','пт','сб'];
+const WDF = ['воскресенье','понедельник','вторник','среда','четверг','пятница','суббота'];
+const MON = ['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'];
+const DIRS = ['С','СВ','В','ЮВ','Ю','ЮЗ','З','СЗ'];
+const DIRF = ['северный','северо-восточный','восточный','юго-восточный','южный','юго-западный','западный','северо-западный'];
+
+/* ---------- storage ---------- */
+function load(){ try{ return JSON.parse(localStorage.getItem(LS)) || {}; }catch(e){ return {}; } }
+function save(){ try{ localStorage.setItem(LS, JSON.stringify({loc:store.loc, recent:store.recent})); }catch(e){ console.warn('storage', e); } }
+let store = load();
+delete store.locs;           // старый локальный архив больше не нужен: прошлое берём у Open-Meteo
+store.loc = store.loc || {name:'Нячанг', sub:'Кханьхоа, Вьетнам', lat:12.2388, lon:109.1967};
+store.recent = store.recent || [store.loc];
+let ui = {view:'today', sel:null};
+let live = {today:null, nowHour:0, current:null, hresModel:null, ensOk:false, err:null};
+
+const locKey = l => l.lat.toFixed(2)+','+l.lon.toFixed(2);
+const mem = {};           // данные только в памяти страницы
+const bucket = () => (mem[locKey(store.loc)] ||= {days:{}, loading:false, done:false});
+const srcOf = d => (live.today && d < live.today) ? 'fact' : bucket().days[d].s;
+
+/* ---------- dates ---------- */
+function addDays(d, n){ const t = new Date(d+'T00:00:00Z'); t.setUTCDate(t.getUTCDate()+n); return t.toISOString().slice(0,10); }
+function dow(d){ return new Date(d+'T00:00:00Z').getUTCDay(); }
+function fmtDate(d){ const [y,m,dd]=d.split('-'); return (+dd)+' '+MON[+m-1]; }
+function rel(d){ const t=live.today; if(!t) return '';
+  if(d===t) return 'Сегодня'; if(d===addDays(t,1)) return 'Завтра'; if(d===addDays(t,-1)) return 'Вчера';
+  if(d===addDays(t,2)) return 'Послезавтра'; return ''; }
+
+/* ---------- fetch ---------- */
+async function getJSON(url){ const r = await fetch(url); const j = await r.json(); if(!r.ok || j.error) throw new Error(j.reason || r.status); return j; }
+
+async function fetchAll(){
+  const {lat, lon} = store.loc;
+  const base = `latitude=${lat}&longitude=${lon}&timezone=auto&wind_speed_unit=ms`;
+  const A = getJSON(`https://api.open-meteo.com/v1/forecast?${base}&hourly=${HV},uv_index,is_day&past_days=92&forecast_days=16`+
+    `&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,is_day,wind_speed_10m,wind_direction_10m,wind_gusts_10m,uv_index,precipitation`);
+  const B = (async()=>{
+    for(const m of ['ecmwf_ifs','ecmwf_ifs025']){
+      try{ const j = await getJSON(`https://api.open-meteo.com/v1/forecast?${base}&hourly=${HV}&forecast_days=${SHORT_DAYS+1}&models=${m}`);
+        if(j.hourly && j.hourly.temperature_2m.some(v=>v!=null)) return {m, j}; }catch(e){}
+    }
+    return null;
+  })();
+  const C = getJSON(`https://ensemble-api.open-meteo.com/v1/ensemble?${base}&models=ecmwf_ifs025&forecast_days=15`+
+    `&hourly=temperature_2m,precipitation,cloud_cover,wind_speed_10m,wind_direction_10m,wind_gusts_10m`).catch(()=>null);
+  const [a, b, c] = await Promise.all([A, B, C]);
+  return {a, b, c};
+}
+
+/* ---------- merge ---------- */
+const FIELDS = ['t','at','c','cc','p','ws','wd','wg','uv','d'];
+const MAPA = {t:'temperature_2m',at:'apparent_temperature',c:'weather_code',cc:'cloud_cover',p:'precipitation',ws:'wind_speed_10m',wd:'wind_direction_10m',wg:'wind_gusts_10m',uv:'uv_index',d:'is_day'};
+function emptyDay(src){ const o={s:src}; FIELDS.forEach(f=>o[f]=Array(24).fill(null)); return o; }
+
+function ensembleMean(h, name){
+  const keys = Object.keys(h).filter(k => k===name || k.startsWith(name+'_member'));
+  return h.time.map((_,i)=>{
+    const vals = keys.map(k=>h[k][i]).filter(v=>v!=null);
+    if(!vals.length) return null;
+    if(name==='wind_direction_10m'){
+      let x=0,y=0; vals.forEach(v=>{x+=Math.sin(v*Math.PI/180); y+=Math.cos(v*Math.PI/180);});
+      return (Math.atan2(x,y)*180/Math.PI+360)%360;
+    }
+    const mean = vals.reduce((s,v)=>s+v,0)/vals.length;
+    return mean;
+  });
+}
+
+function process({a, b, c}){
+  live.current = a.current;
+  const nowT = a.current.time;              // "2026-11-03T05:00"
+  live.today = nowT.slice(0,10);
+  live.nowHour = +nowT.slice(11,13);
+  live.hresModel = b ? b.m : null;
+  live.ensOk = !!c;
+  const today = live.today;
+  const days = {};
+  const put = (time, f, v) => {
+    const d = time.slice(0,10), hh = +time.slice(11,13);
+    if(!days[d]) days[d] = emptyDay('best');
+    days[d][f][hh] = v;
+  };
+  a.hourly.time.forEach((tm,i)=> FIELDS.forEach(f=> put(tm, f, a.hourly[MAPA[f]][i])));
+
+  const lastShort = addDays(today, SHORT_DAYS-1);
+  if(b){
+    b.j.hourly.time.forEach((tm,i)=>{
+      const d = tm.slice(0,10); if(d<today || d>lastShort || !days[d]) return;
+      ['t','at','c','cc','p','ws','wd','wg'].forEach(f=>{ const v=b.j.hourly[MAPA[f]][i]; if(v!=null) put(tm,f,v); });
+      days[d].s = 'hres';
+    });
+  }
+  if(c){
+    const h = c.hourly;
+    const T = ensembleMean(h,'temperature_2m'), P = ensembleMean(h,'precipitation'), CC = ensembleMean(h,'cloud_cover'),
+          WS = ensembleMean(h,'wind_speed_10m'), WDIR = ensembleMean(h,'wind_direction_10m'), WG = ensembleMean(h,'wind_gusts_10m');
+    h.time.forEach((tm,i)=>{
+      const d = tm.slice(0,10); if(d<=lastShort || !days[d] || T[i]==null) return;
+      const day = days[d], hh = +tm.slice(11,13);
+      if(day.s!=='ens'){ day.s='ens'; day.c=Array(24).fill(null); }
+      day.t[hh]=T[i]; day.at[hh]=null;
+      if(P[i]!=null) day.p[hh]=P[i]; if(CC[i]!=null) day.cc[hh]=CC[i];
+      if(WS[i]!=null) day.ws[hh]=WS[i]; if(WDIR[i]!=null) day.wd[hh]=WDIR[i]; if(WG[i]!=null) day.wg[hh]=WG[i];
+    });
+  }
+  const bk = bucket();
+  Object.entries(days).forEach(([d, day])=>{ if(day.t.some(v=>v!=null)) bk.days[d] = day; });
+}
+
+/* более ранний архив — исторические прогнозы Open-Meteo, порциями по 60 дней */
+const HIST_FROM = '2022-01-01';
+async function loadEarlier(){
+  const bk = bucket(), key = locKey(store.loc);
+  if(bk.loading || bk.done || !live.today) return;
+  const first = Object.keys(bk.days).sort()[0]; if(!first) return;
+  const end = addDays(first,-1); if(end < HIST_FROM){ bk.done = true; return; }
+  let start = addDays(first,-60); if(start < HIST_FROM) start = HIST_FROM;
+  bk.loading = true;
+  try{
+    const {lat, lon} = store.loc;
+    const j = await getJSON(`https://historical-forecast-api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&timezone=auto&wind_speed_unit=ms`+
+      `&start_date=${start}&end_date=${end}&hourly=${HV},uv_index,is_day`);
+    if(key !== locKey(store.loc)) return;     // место успели сменить
+    const days = {};
+    j.hourly.time.forEach((tm,i)=>{ const d=tm.slice(0,10), hh=+tm.slice(11,13);
+      const day = days[d] ||= emptyDay('fact'); FIELDS.forEach(f=> day[f][hh] = j.hourly[MAPA[f]][i]); });
+    Object.entries(days).forEach(([d,day])=>{ if(day.t.some(v=>v!=null)) bk.days[d]=day; });
+    if(start === HIST_FROM) bk.done = true;
+    const el = document.getElementById('strip'), w0 = el.scrollWidth;
+    renderStrip();
+    el.scrollLeft += el.scrollWidth - w0;     // лента остаётся на месте
+  }catch(e){ bk.done = true; }
+  finally{ bk.loading = false; }
+}
+function round(day){
+  FIELDS.forEach(f=>{ if(day[f]) day[f]=day[f].map(v=> v==null?null: Math.round(v*10)/10); });
+}
+
+/* ---------- helpers ---------- */
+function win(arr, h){ const r=[]; for(let i=Math.max(0,h-SPAN[0]); i<=Math.min(23,h+SPAN[1]); i++) if(arr && arr[i]!=null) r.push(arr[i]); return r; }
+function sumWin(arr,h){ const w=win(arr,h); return w.length? w.reduce((s,v)=>s+v,0) : null; }
+function maxWin(arr,h){ const w=win(arr,h); return w.length? Math.max(...w) : null; }
+function near(arr,h){ if(!arr) return null; if(arr[h]!=null) return arr[h]; for(let k=1;k<4;k++){ if(arr[h-k]!=null) return arr[h-k]; if(arr[h+k]!=null) return arr[h+k]; } return null; }
+function codeFor(day, h){
+  const c = day.c ? day.c[h] : null;
+  if(c!=null) return c;
+  const p = sumWin(day.p,h) || 0, cc = near(day.cc,h) ?? 50;
+  if(p>=4) return 65; if(p>=1) return 61; if(p>=0.2) return cc>80? 61: 80;
+  if(cc<20) return 0; if(cc<50) return 1; if(cc<80) return 2; return 3;
+}
+function isDay(day,h){ const v = day.d ? day.d[h] : null; return v!=null ? !!v : (h>=6 && h<18); }
+function fmtT(v){ if(v==null) return '–'; const r=Math.round(v); return (r>0?'+':'')+r; }
+function fmtP(v){ if(v==null) return '–'; if(v===0) return '0'; if(v<0.1) return '< 0,1'; return (Math.round(v*10)/10).toString().replace('.',','); }
+function dirName(d){ return DIRS[Math.round(d/45)%8]; }
+function uvDot(u){ if(u==null) return '';
+  const r=Math.round(u), [b,f]=uvColor(r);
+  return `<span class="uvd" style="background:${b};color:${f}" title="УФ-индекс ${r} — ${uvName(r)}">${r}</span>`; }
+function uvColor(u){ if(u==null) return ['transparent','var(--muted)'];
+  const k = u<3?1:u<6?2:u<8?3:u<11?4:5; return [`var(--uv${k})`,`var(--uv${k}f)`]; }
+function uvName(u){ if(u<3) return 'низкий'; if(u<6) return 'умеренный'; if(u<8) return 'высокий'; if(u<11) return 'очень высокий'; return 'экстремальный'; }
+function tempHue(t){ // холод — синий, жара — красный
+  const pts=[[-25,230],[-5,210],[5,190],[15,80],[22,48],[28,32],[34,12],[40,0]];
+  if(t<=pts[0][0]) return pts[0][1];
+  for(let i=1;i<pts.length;i++){ if(t<=pts[i][0]){ const [a,ha]=pts[i-1],[b,hb]=pts[i]; return ha+(hb-ha)*(t-a)/(b-a); } }
+  return 0;
+}
+function esc(s){ return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+/* ---------- icons ---------- */
+const WMO = {0:'Ясно',1:'Преимущественно ясно',2:'Переменная облачность',3:'Пасмурно',45:'Туман',48:'Туман с изморозью',
+  51:'Слабая морось',53:'Морось',55:'Сильная морось',56:'Ледяная морось',57:'Сильная ледяная морось',
+  61:'Небольшой дождь',63:'Дождь',65:'Сильный дождь',66:'Ледяной дождь',67:'Сильный ледяной дождь',
+  71:'Небольшой снег',73:'Снег',75:'Сильный снег',77:'Снежная крупа',80:'Небольшой ливень',81:'Ливень',82:'Сильный ливень',
+  85:'Снегопад',86:'Сильный снегопад',95:'Гроза',96:'Гроза с градом',99:'Гроза с сильным градом'};
+function kindOf(code){
+  if(code==null) return 'cloudy';
+  if(code===0) return 'clear'; if(code===1||code===2) return 'partly'; if(code===3) return 'overcast';
+  if(code===45||code===48) return 'fog';
+  if(code>=51&&code<=57) return 'drizzle';
+  if(code===65||code===82||code===67) return 'heavy';
+  if((code>=61&&code<=64)||code===66) return 'rain';
+  if(code===80||code===81) return 'showers';
+  if((code>=71&&code<=77)||code===85||code===86) return 'snow';
+  if(code>=95) return 'thunder';
+  return 'cloudy';
+}
+function icon(code, day){
+  const k = kindOf(code);
+  const sun = (cx,cy,r)=>{ let s=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="var(--sun)"/>`;
+    for(let i=0;i<8;i++){ const a=i*Math.PI/4, x1=cx+Math.cos(a)*(r+3), y1=cy+Math.sin(a)*(r+3), x2=cx+Math.cos(a)*(r+7), y2=cy+Math.sin(a)*(r+7);
+      s+=`<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="var(--sun)" stroke-width="2.2" stroke-linecap="round"/>`; }
+    return s; };
+  const moon = (cx,cy,r)=>`<path d="M${cx+r*0.3} ${cy-r} a${r} ${r} 0 1 0 ${r*0.9} ${r*1.5} a${r*0.8} ${r*0.8} 0 1 1 -${r*0.9} -${r*1.5}z" fill="var(--moon)"/>`;
+  const sky = (cx,cy,r)=> day ? sun(cx,cy,r) : moon(cx,cy,r);
+  const cloud = (dx,dy,s,fill)=>`<g transform="translate(${dx} ${dy}) scale(${s})" fill="${fill}"><circle cx="15" cy="27" r="7"/><circle cx="24" cy="21" r="9.5"/><circle cx="33" cy="27" r="7"/><rect x="8" y="26" width="32" height="8" rx="4"/></g>`;
+  const drops = (n)=>{ let s=''; const xs=n===3?[16,24,32]:n===2?[19,29]:[24]; xs.forEach(x=> s+=`<path d="M${x} 39 q-2.4 3.6 0 5.6 q2.4 -2 0 -5.6z" fill="var(--rain)"/>`); return s; };
+  let b='';
+  switch(k){
+    case 'clear': b = day ? sun(24,24,8) : moon(22,24,10); break;
+    case 'partly': b = sky(17,16,6.5) + cloud(4,6,0.95,'var(--cloud)'); break;
+    case 'overcast': case 'cloudy': b = cloud(-4,-2,0.85,'var(--cloud2)') + cloud(4,4,0.95,'var(--cloud)'); break;
+    case 'fog': b = cloud(0,-2,0.95,'var(--cloud)') + [36,40,44].map(y=>`<line x1="10" y1="${y}" x2="38" y2="${y}" stroke="var(--cloud2)" stroke-width="2" stroke-linecap="round"/>`).join(''); break;
+    case 'drizzle': b = cloud(0,-2,0.95,'var(--cloud)') + drops(1); break;
+    case 'showers': b = sky(16,14,6) + cloud(2,-2,0.95,'var(--cloud)') + drops(2); break;
+    case 'rain': b = cloud(-3,-4,0.8,'var(--cloud2)') + cloud(2,-2,0.95,'var(--cloud)') + drops(2); break;
+    case 'heavy': b = cloud(-3,-4,0.8,'var(--cloud2)') + cloud(2,-2,0.95,'var(--cloud)') + drops(3); break;
+    case 'snow': b = cloud(0,-2,0.95,'var(--cloud)') + [17,24,31].map(x=>`<circle cx="${x}" cy="42" r="2" fill="var(--moon)"/>`).join(''); break;
+    case 'thunder': b = cloud(-3,-4,0.8,'var(--cloud2)') + cloud(2,-2,0.95,'var(--cloud)') + `<path d="M25 33 l-5 8 h4 l-2 7 l7 -10 h-4 l3 -5z" fill="var(--sun)"/>`; break;
+  }
+  const desc = WMO[code] || '';
+  return `<svg viewBox="0 0 48 48" role="img" aria-label="${desc}"><title>${desc}</title>${b}</svg>`;
+}
+const RI = {
+  temp:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M10 14.5V4a2 2 0 0 1 4 0v10.5a4 4 0 1 1-4 0z"/><circle cx="12" cy="17.5" r="1.6" fill="currentColor"/></svg>',
+  wind:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 9h11a3 3 0 1 0-3-3"/><path d="M3 14h15a3 3 0 1 1-3 3"/><path d="M3 19h7"/></svg>',
+  rain:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3c3.5 4.6 6 8 6 11a6 6 0 0 1-12 0c0-3 2.5-6.4 6-11z"/></svg>',
+  uv:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
+};
+const arrowSvg = deg => `<svg viewBox="0 0 12 12" style="transform:rotate(${(deg+180)%360}deg)"><path d="M6 1 L10 9 L6 7 L2 9 Z" fill="currentColor"/></svg>`;
+
+/* ---------- day summary ---------- */
+const uvShown = day => { const u=(day.uv||[]).filter(v=>v!=null); return u.length && Math.max(...u) >= 3; };
+function summary(day){
+  const t = day.t.filter(v=>v!=null);
+  const pTot = day.p.reduce((s,v)=>s+(v||0),0);
+  const uvs = (day.uv||[]).filter(v=>v!=null);
+  let code = codeFor(day,13);
+  // если днём были осадки — показываем самый «сырой» момент
+  let worst=-1, wh=13; for(let h=7;h<=19;h+=3){ const c=codeFor(day,h); if(c>=51 && c>worst){worst=c; wh=h;} }
+  if(worst>=51 && pTot>=0.5) code = worst;
+  const wg = (day.wg||[]).filter(v=>v!=null);
+  return {max:t.length?Math.max(...t):null, min:t.length?Math.min(...t):null, p:pTot, uv:uvs.length?Math.max(...uvs):null, code, wg:wg.length?Math.max(...wg):null};
+}
+
+/* ---------- render ---------- */
+function render(){
+  document.getElementById('placeName').textContent = store.loc.name;
+  document.title = 'Погода ' + store.loc.name;
+  document.getElementById('placeSub').textContent = (store.loc.sub||'') + (live.updated ? ' · обновлено '+live.updated : '');
+  renderNow(); renderTabs(); renderNow(); renderStrip(); renderDetail();
+}
+
+function renderNow(){
+  const el = document.getElementById('now'), c = live.current;
+  if(live.err && !c){ el.innerHTML = `<span class="err">Не удалось получить прогноз: ${esc(live.err)}. Проверьте интернет и нажмите «Обновить».</span>`; return; }
+  const sd = ui.view==='long' ? live.today : selectedDates()[0];
+  if(sd && sd!==live.today){ el.innerHTML = dayCard(sd); return; }
+  if(!c){ return; }
+  const [ub,uf] = uvColor(c.uv_index);
+  el.innerHTML = `
+    <div class="big">${icon(c.weather_code, !!c.is_day).replace('','')}<b title="Температура воздуха сейчас">${fmtT(c.temperature_2m)}°</b></div>
+    <div class="kv">
+      <span>Влажность</span><b title="Относительная влажность воздуха сейчас">${Math.round(c.relative_humidity_2m)}%</b>
+      <span>Ощущается</span><b title="Температура по ощущению с учётом ветра и влажности">${fmtT(c.apparent_temperature)}°</b>
+    </div>
+    <div class="kv">
+      <span>Ветер</span><b title="Скорость ветра, направление (откуда дует) и порывы">${Math.round(c.wind_speed_10m)} м/с ${dirName(c.wind_direction_10m)}, порывы ${Math.round(c.wind_gusts_10m)}</b>
+    </div>
+    ${!(bucket().days[live.today] && uvShown(bucket().days[live.today]))?'':`<div class="kv uvk">
+      ${uvDot(c.uv_index)}
+    </div>`}
+    ${live.err ? '<div class="note err">'+esc(live.err)+'</div>' : ''}`;
+}
+
+function dayCard(d){
+  const day = bucket().days[d];
+  if(!day) return '<span class="muted">Нет данных за этот день</span>';
+  const s = summary(day), [ub,uf] = uvColor(s.uv);
+  const ws = day.ws.filter(v=>v!=null), wsMax = ws.length ? Math.max(...ws) : null;
+  const wd = wsMax!=null ? day.wd[day.ws.indexOf(wsMax)] : null;
+  return `
+    <div class="big">${icon(s.code,true).replace('','')}<b title="Максимум днём">${fmtT(s.max)}°</b><span class="muted" style="font-size:22px" title="Минимум ночью">/ ${fmtT(s.min)}°</span></div>
+    <div class="kv">
+      <span>Осадки</span><b title="Сумма осадков за сутки">${fmtP(Math.round(s.p*10)/10)} мм</b>
+    </div>
+    <div class="kv">
+      <span>Ветер</span><b title="Максимальный ветер за день, направление и порывы">${wsMax==null?'–':Math.round(wsMax)+' м/с'+(wd!=null?' '+dirName(wd):'')}${s.wg!=null?', порывы '+Math.round(s.wg):''}</b>
+    </div>
+    ${!uvShown(day)?'':`<div class="kv uvk">
+      ${uvDot(s.uv)}
+    </div>`}`;
+}
+function renderTabs(){
+  document.querySelectorAll('#tabs button').forEach(b=> b.setAttribute('aria-pressed', b.dataset.v===ui.view));
+}
+
+function selectedDates(){
+  const t = live.today || Object.keys(bucket().days).sort().pop();
+  switch(ui.view){
+    case 'yesterday': return [addDays(t,-1)];
+    case 'now': case 'today': return [t];
+    case 'tomorrow': return [addDays(t,1)];
+    case '3d': return [t, addDays(t,1), addDays(t,2)];
+    case 'day': return [ui.sel];
+    default: return [];
+  }
+}
+
+function renderStrip(){
+  const el = document.getElementById('strip');
+  const bk = bucket(), dates = Object.keys(bk.days).sort(), t = live.today;
+  const sel = new Set(selectedDates());
+  let html='';
+  dates.forEach(d=>{
+    const day = bk.days[d], s = summary(day);
+    if(t && d===t) html += '<div class="sep" title="Слева архив, справа прогноз"></div>';
+    const [ub,uf] = uvColor(s.uv);
+    const cls = ['day']; if(t && d<t) cls.push('past'); if(d===t) cls.push('today');
+    const tip = `${WDF[dow(d)]}, ${fmtDate(d)}: днём до ${fmtT(s.max)}°, ночью до ${fmtT(s.min)}°, осадки ${fmtP(Math.round(s.p*10)/10)} мм`;
+    html += `<button class="${cls.join(' ')}" data-d="${d}" aria-pressed="${sel.has(d)}" title="${tip}">
+      <i class="dot" style="background:${SRC[srcOf(d)].color}" title="Источник: ${esc(SRC[srcOf(d)].name)}"></i>
+      <span class="dhead"><b>${d===t?'сегодня':WD[dow(d)]}</b>, <span class="ddate">${fmtDate(d)}</span></span>
+      ${icon(s.code,true)}
+      <span class="dt"><span class="dmax">${fmtT(s.max)}°</span><span class="dmin">/ ${fmtT(s.min)}°</span>${uvShown(day)?`<span class="uvb">${uvDot(s.uv)}</span>`:''}</span>
+    </button>`;
+  });
+  const keepScroll = el.dataset.ready === locKey(store.loc);
+  const prevLeft = el.scrollLeft;
+  el.innerHTML = html || '<span class="muted">Пока нет данных</span>';
+  if(keepScroll){ el.scrollLeft = prevLeft; }
+  else if(scrollToToday(false)) el.dataset.ready = locKey(store.loc);
+}
+function scrollToToday(smooth){
+  const el = document.getElementById('strip'), td = el.querySelector('.today');
+  if(!td) return false;
+  const a = el.getBoundingClientRect(), b = td.getBoundingClientRect();
+  const left = el.scrollLeft + (b.left - a.left) - 2;   // сегодня — первая карточка слева
+  el.scrollTo({left, behavior: smooth && !matchMedia('(prefers-reduced-motion: reduce)').matches ? 'smooth' : 'auto'});
+  return true;
+}
+
+function dayPanel(d){
+  const bk = bucket(), day = bk.days[d];
+  const title = `${rel(d) ? rel(d)+', ' : ''}${WDF[dow(d)]}, ${fmtDate(d)}`;
+  if(!day) return `<section class="panel"><div class="ph"><h2>${title}</h2></div><p class="muted">Нет данных за этот день. Архив начинается с ${fmtDate(Object.keys(bk.days).sort()[0]||d)}.</p></section>`;
+  const isToday = d===live.today, sk = srcOf(d);
+  const temps = COLS.map(h=>near(day.t,h));
+  const vals = temps.filter(v=>v!=null), lo = Math.min(...vals), hi = Math.max(...vals);
+  const hgt = v => v==null ? 40 : 50 + (hi===lo ? 20 : (v-lo)/(hi-lo)*45);
+  let g = '';
+  const RL = (svg, tip) => `<div class="rl" title="${tip}">${svg}</div>`;
+  g += '<div></div>';
+  COLS.forEach(h=> g += `<div class="hr ${isToday && h+1<live.nowHour ? 'gone':''}" title="${isToday && h+1<live.nowHour ? 'Уже прошло' : 'Местное время'}">${String(h).padStart(2,'0')}:00</div>`);
+  g += '<div></div>';
+  COLS.forEach(h=> g += `<div class="ic">${icon(codeFor(day,h), isDay(day,h))}</div>`);
+  g += RL(RI.temp,'Температура воздуха / ощущается как, °C');
+  COLS.forEach((h,i)=>{ const v=temps[i];
+    const a = day.at ? near(day.at,h) : null;
+    const tip = v==null ? '' : `Температура ${fmtT(v)}°`+(a!=null?`, ощущается как ${fmtT(a)}°`:'');
+    g += `<div class="tband" title="${tip}"><div style="height:${hgt(v)}%;--h:${v==null?200:tempHue(v).toFixed(0)}"><span>${fmtT(v)}${a!=null?` <small class="fl">/ ${fmtT(a)}</small>`:''}</span></div></div>`; });
+  g += RL(RI.wind,'Ветер / порывы, м/с, направление (откуда дует)');
+  COLS.forEach(h=>{ const ws=near(day.ws,h), wd=near(day.wd,h), wg=maxWin(day.wg,h);
+    const calm = !(ws!=null && ws>=0.5 && wd!=null);
+    const tip = ws==null ? '' : `Ветер ${Math.round(ws)} м/с${wg!=null?', порывы до '+Math.round(wg)+' м/с':''}${calm?', штиль':', '+DIRF[Math.round(wd/45)%8]}`;
+    g += `<div class="wind" title="${tip}"><span>${ws==null?'–':Math.round(ws)}</span><span class="wg ${wg>=5?'strong':''}">/ ${wg==null?'–':Math.round(wg)}</span><span class="wd">${calm ? '°' : arrowSvg(wd)+dirName(wd)}</span></div>`; });
+  g += RL(RI.rain,`Осадки в жидком эквиваленте за ${SPAN[0]+SPAN[1]+1} часа, мм`.replace('6 часа','6 часов'));
+  COLS.forEach(h=>{ const p=sumWin(day.p,h); g += `<div class="pr ${p>0?'wet':''}" title="Осадки с ${Math.max(0,h-SPAN[0])}:00 до ${Math.min(24,h+SPAN[1]+1)}:00: ${fmtP(p)} мм">${fmtP(p)}</div>`; });
+  if(uvShown(day)){
+    g += RL(RI.uv,'УФ-индекс');
+    COLS.forEach(h=>{ const u=maxWin(day.uv,h); const [b,f]=uvColor(u);
+      g += `<div class="uv">${uvDot(u)}</div>`; });
+  }
+  return `<section class="panel">
+    <div class="ph"><h2>${title}</h2></div>
+    <div class="scroll"><div class="grid${uvShown(day)?' has-uv':''}" style="--n:${COLS.length}"><div class="vlines" aria-hidden="true">${'<i></i>'.repeat(COLS.length+1)}</div>${g}</div></div></section>`;
+}
+
+function longTable(){
+  const bk = bucket(), t = live.today; if(!t) return '';
+  let rows='';
+  for(let i=0;i<16;i++){
+    const d = addDays(t,i), day = bk.days[d]; if(!day) continue;
+    const s = summary(day), [ub,uf]=uvColor(s.uv);
+    rows += `<tr data-d="${d}" class="${i===0?'today':''}">
+      <td>${WD[dow(d)]}, ${fmtDate(d)}</td><td>${icon(s.code,true)}</td>
+      <td>${fmtT(s.max)}°</td><td class="muted">${fmtT(s.min)}°</td>
+      <td>${fmtP(Math.round(s.p*10)/10)}</td><td>${s.wg==null?'–':Math.round(s.wg)}</td>
+      <td>${uvShown(day)?uvDot(s.uv):''}</td>
+      <td><span class="src" style="justify-content:flex-end"><i style="background:${SRC[srcOf(d)].color}"></i>${({fact:'архив',hres:'HRES',ens:'ансамбль',best:'best'})[srcOf(d)]}</span></td></tr>`;
+  }
+  return `<section class="panel"><div class="ph"><h2>Прогноз на 2 недели</h2><span class="src">нажмите на день, чтобы раскрыть</span></div>
+    <div class="scroll"><table class="long"><thead><tr><th>День</th><th></th><th title="Максимальная температура">Макс</th><th title="Минимальная температура">Мин</th><th title="Сумма осадков за сутки">Осадки, мм</th><th title="Максимальные порывы ветра за сутки">Порывы, м/с</th><th title="Максимальный УФ-индекс за день (не показан, если низкий)">УФ</th><th title="Модель, из которой взят прогноз">Источник</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
+}
+
+function renderDetail(){
+  const el = document.getElementById('detail');
+  if(ui.view==='long'){ el.innerHTML = longTable(); return; }
+  const ds = selectedDates().filter(Boolean);
+  el.classList.toggle('multi', ds.length > 1);
+  el.innerHTML = ds.map(dayPanel).join('');
+}
+
+/* ---------- actions ---------- */
+async function refresh(){
+  document.getElementById('placeSub').textContent = (store.loc.sub||'') + ' · обновляю…';
+  try{
+    const r = await fetchAll();
+    process(r);
+    live.err = null;
+    const n = new Date(); live.updated = n.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
+  }catch(e){
+    live.err = e.message || String(e);
+    if(!live.today){ const ds=Object.keys(bucket().days).sort(); live.today = new Date().toISOString().slice(0,10); }
+  }
+  render();
+}
+
+document.getElementById('tabs').addEventListener('click', e=>{
+  const b = e.target.closest('button'); if(!b) return;
+  ui.view = b.dataset.v; ui.sel = null; renderTabs(); renderNow(); renderStrip(); renderDetail();
+});
+function pickDay(d){
+  const t = live.today;
+  if(d===t) ui.view='today'; else if(d===addDays(t,1)) ui.view='tomorrow'; else if(d===addDays(t,-1)) ui.view='yesterday';
+  else { ui.view='day'; ui.sel=d; }
+  renderTabs(); renderNow(); renderStrip(); renderDetail();
+}
+const stripEl = document.getElementById('strip');
+stripEl.addEventListener('click', e=>{
+  if(drag.moved){ e.preventDefault(); e.stopPropagation(); drag.moved=false; return; }
+  const b=e.target.closest('[data-d]'); if(b){ pickDay(b.dataset.d); revealCard(b.dataset.d); } }, true);
+// перетаскивание мышью прямо за карточки (на телефоне работает обычная прокрутка пальцем)
+const drag = {on:false, moved:false, x:0, left:0};
+stripEl.addEventListener('pointerdown', e=>{
+  if(e.pointerType!=='mouse' || e.button!==0) return;
+  drag.on=true; drag.moved=false; drag.x=e.clientX; drag.left=stripEl.scrollLeft;
+});
+window.addEventListener('pointermove', e=>{
+  if(!drag.on) return;
+  const dx = e.clientX - drag.x;
+  if(!drag.moved && Math.abs(dx) > 5){ drag.moved = true; stripEl.classList.add('dragging'); }
+  if(drag.moved) stripEl.scrollLeft = drag.left - dx;
+});
+window.addEventListener('pointerup', ()=>{ if(!drag.on) return; drag.on=false; stripEl.classList.remove('dragging'); });
+// колесо мыши листает ленту по горизонтали
+stripEl.addEventListener('wheel', e=>{
+  if(Math.abs(e.deltaY) > Math.abs(e.deltaX)){ stripEl.scrollLeft += e.deltaY; e.preventDefault(); }
+}, {passive:false});
+// у левого края подгружаем более ранний архив
+stripEl.addEventListener('scroll', ()=>{ if(stripEl.scrollLeft < 400) loadEarlier(); });
+document.getElementById('detail').addEventListener('click', e=>{ const r=e.target.closest('tr[data-d]'); if(r) pickDay(r.dataset.d); });
+document.getElementById('refresh').addEventListener('click', refresh);
+function stepStrip(dir){
+  const el = document.getElementById('strip'), a = el.getBoundingClientRect();
+  const cards = [...el.querySelectorAll('.day')];
+  let idx = cards.findIndex(c => c.getBoundingClientRect().left >= a.left - 1);
+  if(idx < 0) idx = cards.length - 1;
+  const target = cards[Math.max(0, Math.min(cards.length-1, idx + dir))];
+  if(target) el.scrollBy({left: target.getBoundingClientRect().left - a.left - 2, behavior:'smooth'});
+}
+function revealCard(d){
+  const el = document.getElementById('strip'), c = el.querySelector(`.day[data-d="${d}"]`); if(!c) return;
+  const a = el.getBoundingClientRect(), b = c.getBoundingClientRect();
+  if(b.left < a.left) el.scrollBy({left: b.left - a.left - 2, behavior:'smooth'});
+  else if(b.right > a.right) el.scrollBy({left: b.right - a.right + 2, behavior:'smooth'});
+}
+document.getElementById('goPast').addEventListener('click', ()=>stepStrip(-1));
+document.getElementById('goNext').addEventListener('click', ()=>stepStrip(1));
+document.getElementById('goToday').addEventListener('click', ()=>{
+  if(!['today','now','3d'].includes(ui.view)){ ui.view='today'; ui.sel=null; renderTabs(); renderNow(); renderStrip(); renderDetail(); }
+  scrollToToday(true);
+});
+
+function setLoc(l){
+  store.loc = l;
+  store.recent = [l, ...store.recent.filter(x=>locKey(x)!==locKey(l))].slice(0,10);
+  save(); live.current=null; ui.view='today'; document.getElementById('strip').dataset.ready=''; render(); refresh(); }
+
+let qTimer;
+const qEl = document.getElementById('q'), resEl = document.getElementById('results');
+qEl.addEventListener('input', ()=>{
+  clearTimeout(qTimer); const q = qEl.value.trim();
+  if(q.length<2){ showRecent(); return; }
+  qTimer = setTimeout(async()=>{
+    try{
+      const j = await getJSON(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=6&language=ru&format=json`);
+      const rs = j.results || [];
+      resEl.innerHTML = rs.length ? rs.map((r,i)=>`<button data-i="${i}">${esc(r.name)} <small>${esc([r.admin1,r.country].filter(Boolean).join(', '))}</small></button>`).join('') : '<button disabled>Ничего не найдено</button>';
+      resEl.hidden = false;
+      resEl.onclick = e=>{ const b=e.target.closest('button[data-i]'); if(!b) return; const r=rs[+b.dataset.i];
+        resEl.hidden=true; qEl.value='';
+        setLoc({name:r.name, sub:[r.admin1,r.country].filter(Boolean).join(', '), lat:r.latitude, lon:r.longitude}); };
+    }catch(e){ resEl.innerHTML='<button disabled>Поиск недоступен</button>'; resEl.hidden=false; }
+  }, 300);
+});
+function showRecent(){
+  const cur = locKey(store.loc), list = store.recent.filter(l=>locKey(l)!==cur);
+  if(!list.length){ resEl.hidden=true; return; }
+  resEl.innerHTML = list.map((l,i)=>`<button data-i="${i}">${esc(l.name)} <small>${esc(l.sub||'')}</small></button>`).join('');
+  resEl.hidden = false;
+  resEl.onclick = e=>{ const b=e.target.closest('button[data-i]'); if(!b) return; resEl.hidden=true; qEl.value=''; setLoc(list[+b.dataset.i]); };
+}
+qEl.addEventListener('focus', ()=>{ if(qEl.value.trim().length<2) showRecent(); });
+document.addEventListener('click', e=>{ if(!e.target.closest('.hctl')) resEl.hidden=true; });
+
+// на сенсорных экранах подсказки показываем по касанию
+const TOUCH = matchMedia('(hover: none)');
+let tipTimer;
+document.addEventListener('click', e=>{
+  if(!TOUCH.matches) return;
+  const svg = e.target.closest('svg'), st = svg && svg.querySelector(':scope > title');
+  const el = e.target.closest('[title]');
+  const text = (st && st.textContent) || (el && el.getAttribute('title'));
+  if(!text) return;
+  let t = document.querySelector('.tip'); if(!t){ t = document.createElement('div'); t.className='tip'; t.setAttribute('role','status'); document.body.appendChild(t); }
+  t.textContent = text; t.hidden = false;
+  clearTimeout(tipTimer); tipTimer = setTimeout(()=>{ t.hidden = true; }, 3000);
+});
+MOBILE.addEventListener('change', ()=>{ setCols(); renderDetail(); });
+
+render();
+refresh();
+</script>
+</body>
+</html>
